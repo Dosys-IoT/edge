@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: dosys-edge-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.main
+    autoDeploy: false
+    envVars:
+      - key: MQTT_HOST
+        sync: false
+      - key: MQTT_PORT
+        value: "8883"
+      - key: MQTT_USERNAME
+        sync: false
+      - key: MQTT_PASSWORD
+        sync: false
+      - key: MQTT_TLS
+        value: "true"
+      - key: MQTT_CLIENT_ID
+        value: dosys-edge-api
+      - key: REST_API_BASE_URL
+        sync: false
+      - key: EDGE_SERVICE_KEY
+        sync: false
+      - key: DEVICE_KEYS_JSON
+        value: "{}"
+      - key: EDGE_SQLITE_PATH
+        value: ./edge.db
+      - key: EDGE_HTTP_PORT
+        sync: false

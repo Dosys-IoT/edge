@@ -1,0 +1,6 @@
+Flask>=3.0.0
+peewee>=3.17.0
+paho-mqtt>=2.1.0
+requests>=2.32.0
+python-dotenv>=1.0.1
+pydantic>=2.7.0
