@@ -1,8 +1,10 @@
-from flask import Blueprint, jsonify
+from uuid import uuid4
+
+from flask import Blueprint, jsonify, request
 from app.persistence import repositories
 
 
-def create_http_blueprint(sync_service, config_service, mqtt_manager):
+def create_http_blueprint(sync_service, config_service, mqtt_manager, command_service):
     bp = Blueprint("edge_api", __name__)
 
     @bp.get("/edge/v1/health")
@@ -63,5 +65,41 @@ def create_http_blueprint(sync_service, config_service, mqtt_manager):
             for attempt in repositories.get_recent_sync_attempts(10)
         ]
         return jsonify({"recentReceivedMqttEvents": recent_events, "recentSyncAttempts": recent_attempts}), 200
+
+    @bp.post("/edge/v1/devices/<device_id>/commands/audio-test")
+    def audio_test_command(device_id: str):
+        command_id = (request.get_json(silent=True) or {}).get("commandId") or str(uuid4())
+        try:
+            payload = command_service.publish_audio_test(device_id, command_id)
+            return jsonify({"topic": f"dosys/devices/{device_id}/commands", "payload": payload}), 200
+        except RuntimeError as exc:
+            return jsonify({"status": "MQTT_UNAVAILABLE", "message": str(exc)}), 503
+
+    @bp.post("/edge/v1/devices/<device_id>/commands/led-test")
+    def led_test_command(device_id: str):
+        command_id = (request.get_json(silent=True) or {}).get("commandId") or str(uuid4())
+        try:
+            payload = command_service.publish_led_test(device_id, command_id)
+            return jsonify({"topic": f"dosys/devices/{device_id}/commands", "payload": payload}), 200
+        except RuntimeError as exc:
+            return jsonify({"status": "MQTT_UNAVAILABLE", "message": str(exc)}), 503
+
+    @bp.post("/edge/v1/devices/<device_id>/commands/status-request")
+    def status_request_command(device_id: str):
+        command_id = (request.get_json(silent=True) or {}).get("commandId") or str(uuid4())
+        try:
+            payload = command_service.publish_status_request(device_id, command_id)
+            return jsonify({"topic": f"dosys/devices/{device_id}/commands", "payload": payload}), 200
+        except RuntimeError as exc:
+            return jsonify({"status": "MQTT_UNAVAILABLE", "message": str(exc)}), 503
+
+    @bp.post("/edge/v1/devices/<device_id>/commands/config-sync")
+    def config_sync_command(device_id: str):
+        command_id = (request.get_json(silent=True) or {}).get("commandId") or str(uuid4())
+        try:
+            payload = command_service.publish_config_sync(device_id, command_id)
+            return jsonify({"topic": f"dosys/devices/{device_id}/commands", "payload": payload}), 200
+        except RuntimeError as exc:
+            return jsonify({"status": "MQTT_UNAVAILABLE", "message": str(exc)}), 503
 
     return bp

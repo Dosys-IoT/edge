@@ -14,6 +14,9 @@ env/
 
 # SQLite database
 *.db
+*.db-wal
+*.db-shm
+edge.db*
 
 # IDE / OS
 .vscode/

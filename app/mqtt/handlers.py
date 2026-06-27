@@ -44,7 +44,22 @@ class MqttMessageHandler:
     def _handle_config_request(self, mqtt_client, device_id: str, payload: dict[str, Any]) -> None:
         try:
             parsed = self.sync_service.validate_config_request(payload)
-            runtime_config = self.config_service.fetch_runtime_config(device_id)
+            if parsed.deviceId is not None and parsed.deviceId != device_id:
+                raise ValueError(f"Payload deviceId={parsed.deviceId} does not match topic deviceId={device_id}")
+
+            runtime_config = None
+            try:
+                runtime_config = self.config_service.fetch_runtime_config(device_id)
+            except Exception as rest_exc:  # pylint: disable=broad-except
+                logger.warning("Runtime config fetch failed deviceId=%s error=%s", device_id, rest_exc)
+                cached = self.config_service.get_cached_config(device_id)
+                if cached is not None:
+                    runtime_config = cached["payloadJson"]
+                    if isinstance(runtime_config, str):
+                        runtime_config = json.loads(runtime_config)
+                if runtime_config is None:
+                    raise
+
             self.config_service.cache_runtime_config(device_id, runtime_config)
             response_payload = self.config_service.build_config_response(
                 device_id=device_id,

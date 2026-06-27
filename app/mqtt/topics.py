@@ -15,3 +15,7 @@ SUBSCRIPTIONS = [
 
 def config_response_topic(device_id: str) -> str:
     return f"dosys/devices/{device_id}/config/response"
+
+
+def commands_topic(device_id: str) -> str:
+    return f"dosys/devices/{device_id}/commands"

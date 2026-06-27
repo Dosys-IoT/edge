@@ -1,5 +1,6 @@
 import json
 import logging
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Type
 
@@ -51,6 +52,15 @@ class SyncService:
             raise ValueError(f"Unsupported topic format: {topic}")
         return device_id, event_type
 
+    def _ensure_device_id(self, payload: dict[str, Any], topic_device_id: str) -> dict[str, Any]:
+        payload_device_id = payload.get("deviceId")
+        if payload_device_id is not None and str(payload_device_id) != topic_device_id:
+            raise ValueError(f"Payload deviceId={payload_device_id} does not match topic deviceId={topic_device_id}")
+
+        normalized = dict(payload)
+        normalized["deviceId"] = topic_device_id
+        return normalized
+
     def optional_device_key(self, device_id: str) -> str | None:
         return self.device_keys.get(device_id)
 
@@ -82,8 +92,8 @@ class SyncService:
         fields_by_type = {
             "environment": ["recordedAt"],
             "intake": ["scheduledAt", "confirmedAt"],
-            "stock": ["recordedAt"],
-            "heartbeat": ["recordedAt", "rtcTime"],
+            "stock": ["reportedAt", "recordedAt"],
+            "heartbeat": ["rtcTime", "recordedAt"],
         }
         fields = fields_by_type.get(event_type, [])
         normalized = dict(payload)
@@ -93,6 +103,64 @@ class SyncService:
                 # REST expects OffsetDateTime. If timezone is missing, force UTC.
                 if "Z" not in value and "+" not in value[10:] and "-" not in value[10:]:
                     normalized[field] = value + "Z"
+        return normalized
+
+    def _normalize_payload_for_rest(self, payload: dict[str, Any], event_type: str, topic_device_id: str) -> dict[str, Any]:
+        normalized = self._ensure_device_id(payload, topic_device_id)
+        if event_type == "environment" and normalized.get("firmwareVersion") is None:
+            normalized["firmwareVersion"] = "unknown"
+        if event_type == "intake" and normalized.get("status") == "SKIPPED":
+            normalized["status"] = "SNOOZED"
+        if event_type == "intake" and normalized.get("source") is None:
+            normalized["source"] = "PHYSICAL_BUTTON"
+        if event_type == "intake" and normalized.get("buttonPin") is None:
+            normalized["buttonPin"] = 15
+        if event_type == "stock" and normalized.get("reportedAt") is None and normalized.get("recordedAt") is not None:
+            normalized["reportedAt"] = normalized["recordedAt"]
+        if event_type == "stock" and normalized.get("reason") is None:
+            normalized["reason"] = "INTAKE_CONFIRMED"
+        if event_type == "stock" and normalized.get("reportedAt") is None:
+            raise ValueError("stock payload requires reportedAt or recordedAt")
+        if event_type == "heartbeat" and normalized.get("rtcTime") is None and normalized.get("recordedAt") is not None:
+            normalized["rtcTime"] = normalized["recordedAt"]
+        if event_type == "heartbeat" and normalized.get("rtcTime") is None:
+            raise ValueError("heartbeat payload requires rtcTime or recordedAt")
+        if event_type == "heartbeat" and normalized.get("mqttConnected") is None:
+            normalized["mqttConnected"] = normalized.get("wifiConnected", False)
+        if event_type == "heartbeat" and normalized.get("rtcOk") is None:
+            normalized["rtcOk"] = True
+        if event_type == "heartbeat" and normalized.get("sht3xOk") is None:
+            normalized["sht3xOk"] = True
+        if event_type == "heartbeat" and normalized.get("dfPlayerOk") is None:
+            normalized["dfPlayerOk"] = True
+        if event_type == "heartbeat" and normalized.get("sdCardOk") is None:
+            normalized["sdCardOk"] = True
+        if event_type == "heartbeat" and normalized.get("switchOk") is None:
+            normalized["switchOk"] = True
+        if event_type == "heartbeat" and normalized.get("buttonPin") is None:
+            normalized["buttonPin"] = 15
+        if event_type == "heartbeat" and normalized.get("freeHeap") is None:
+            normalized["freeHeap"] = 0
+        if event_type == "heartbeat" and normalized.get("rssi") is None:
+            normalized["rssi"] = 0
+        if event_type == "heartbeat" and normalized.get("firmwareVersion") is None:
+            normalized["firmwareVersion"] = "unknown"
+        if event_type == "config_request" and normalized.get("rtcTime") is None and normalized.get("requestedAt") is not None:
+            normalized["rtcTime"] = normalized["requestedAt"]
+        return normalized
+
+    def _ensure_event_id(self, payload: dict[str, Any], topic: str, event_type: str) -> dict[str, Any]:
+        normalized = dict(payload)
+        if normalized.get("eventId"):
+            return normalized
+
+        fingerprint_source = json.dumps(
+            {key: value for key, value in normalized.items() if key != "eventId"},
+            sort_keys=True,
+            default=str,
+        )
+        fingerprint = hashlib.sha1(f"{topic}:{event_type}:{fingerprint_source}".encode("utf-8")).hexdigest()
+        normalized["eventId"] = fingerprint
         return normalized
 
     def save_and_sync_event(self, topic: str, payload: dict[str, Any]) -> ReceivedMqttEvent:
@@ -107,7 +175,9 @@ class SyncService:
         except ValidationError as exc:
             raise ValueError(f"Payload validation failed for event={event_type}: {exc}") from exc
 
-        normalized_payload = json.loads(validated_model.model_dump_json())
+        normalized_payload = json.loads(validated_model.model_dump_json(exclude_none=True))
+        normalized_payload = self._normalize_payload_for_rest(normalized_payload, event_type, device_id)
+        normalized_payload = self._ensure_event_id(normalized_payload, topic, event_type)
         normalized_payload = self._normalize_timestamps(normalized_payload, event_type)
         event = repositories.create_received_event(device_id=device_id, topic=topic, payload=normalized_payload)
         self._send_to_rest(event, normalized_payload, event_type)
@@ -133,4 +203,5 @@ class SyncService:
         return {"retried": retried, "synced": synced}
 
     def validate_config_request(self, payload: dict[str, Any]) -> ConfigRequestPayload:
-        return ConfigRequestPayload.model_validate(payload)
+        validated = ConfigRequestPayload.model_validate(payload)
+        return validated

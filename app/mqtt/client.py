@@ -1,5 +1,6 @@
 import logging
 import ssl
+import json
 
 import paho.mqtt.client as mqtt
 
@@ -54,6 +55,14 @@ class MqttClientManager:
             "clientId": self.settings.mqtt_client_id,
             "reason": self.last_reason,
         }
+
+    def publish_json(self, topic: str, payload: dict, qos: int = 1) -> None:
+        if not self.connected:
+            raise RuntimeError("MQTT is not connected")
+
+        result = self.client.publish(topic, json.dumps(payload), qos=qos)
+        if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            raise RuntimeError(f"MQTT publish failed rc={result.rc}")
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):  # pylint: disable=unused-argument
         self.connected = reason_code == 0

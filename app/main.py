@@ -10,6 +10,7 @@ from app.mqtt.handlers import MqttMessageHandler
 from app.persistence.database import close_database, connect_database, init_database
 from app.persistence.repositories import create_tables
 from app.rest.rest_client import RestClient
+from app.services.command_service import CommandService
 from app.services.config_service import ConfigService
 from app.services.sync_service import SyncService
 
@@ -34,9 +35,10 @@ def create_app() -> tuple[Flask, object, object, object]:
 
     message_handler = MqttMessageHandler(sync_service=sync_service, config_service=config_service)
     mqtt_manager = MqttClientManager(settings=settings, message_handler=message_handler)
+    command_service = CommandService(mqtt_manager=mqtt_manager)
 
     app = Flask(__name__)
-    app.register_blueprint(create_http_blueprint(sync_service, config_service, mqtt_manager))
+    app.register_blueprint(create_http_blueprint(sync_service, config_service, mqtt_manager, command_service))
 
     return app, settings, mqtt_manager, rest_client
 
