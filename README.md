@@ -53,6 +53,17 @@ python -m app.main
 - `POST /edge/v1/devices/{deviceId}/commands/status-request`
 - `POST /edge/v1/devices/{deviceId}/commands/config-sync`
 
+These endpoints include CORS for local frontend development from `http://localhost:3000`
+and `http://127.0.0.1:3000`.
+
+`GET /edge/v1/devices/{deviceId}/cached-config` returns `200` with:
+
+```json
+{ "deviceId": "1", "available": false, "config": null }
+```
+
+when nothing is cached yet.
+
 ## MQTT Topics
 
 Subscriptions:

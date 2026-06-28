@@ -2,6 +2,7 @@ import atexit
 import logging
 
 from flask import Flask
+from flask_cors import CORS
 
 from app.config import ConfigError, load_settings
 from app.interfaces.http_routes import create_http_blueprint
@@ -38,6 +39,16 @@ def create_app() -> tuple[Flask, object, object, object]:
     command_service = CommandService(mqtt_manager=mqtt_manager)
 
     app = Flask(__name__)
+    CORS(
+        app,
+        resources={r"/edge/*": {"origins": [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "https://dosys-edge-149855215912.us-central1.run.app",
+        ]}},
+        allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+        methods=["GET", "POST", "OPTIONS"],
+    )
     app.register_blueprint(create_http_blueprint(sync_service, config_service, mqtt_manager, command_service))
 
     return app, settings, mqtt_manager, rest_client

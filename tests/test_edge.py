@@ -70,6 +70,12 @@ class FakeMqttManager:
         return {"connected": True, "clientId": "dosys-edge-api", "reason": "0"}
 
 
+def build_test_app(sync_service, config_service, mqtt_manager, command_service):
+    app = Flask(__name__)
+    app.register_blueprint(create_http_blueprint(sync_service, config_service, mqtt_manager, command_service))
+    return app
+
+
 class EdgeContractTests(unittest.TestCase):
     def setUp(self):
         self.rest_client = FakeRestClient()
@@ -214,10 +220,9 @@ class EdgeContractTests(unittest.TestCase):
         self.assertEqual(mqtt_client.published[0][1]["deviceId"], "1")
 
     def test_audioTestCommandPublishesMqttCommand(self):
-        app = Flask(__name__)
         mqtt_manager = FakeMqttManager()
         command_service = CommandService(mqtt_manager=mqtt_manager)
-        app.register_blueprint(create_http_blueprint(self.sync_service, self.config_service, mqtt_manager, command_service))
+        app = build_test_app(self.sync_service, self.config_service, mqtt_manager, command_service)
         client = app.test_client()
 
         response = client.post("/edge/v1/devices/1/commands/audio-test")
@@ -228,10 +233,9 @@ class EdgeContractTests(unittest.TestCase):
         self.assertEqual(mqtt_manager.published[0][1]["track"], 1)
 
     def test_ledTestCommandPublishesMqttCommand(self):
-        app = Flask(__name__)
         mqtt_manager = FakeMqttManager()
         command_service = CommandService(mqtt_manager=mqtt_manager)
-        app.register_blueprint(create_http_blueprint(self.sync_service, self.config_service, mqtt_manager, command_service))
+        app = build_test_app(self.sync_service, self.config_service, mqtt_manager, command_service)
         client = app.test_client()
 
         response = client.post("/edge/v1/devices/1/commands/led-test")
@@ -239,6 +243,48 @@ class EdgeContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(mqtt_manager.published[0][0], "dosys/devices/1/commands")
         self.assertEqual(mqtt_manager.published[0][1]["command"], "LED_TEST")
+
+    def test_corsHeadersPresentForHealth(self):
+        mqtt_manager = FakeMqttManager()
+        command_service = CommandService(mqtt_manager=mqtt_manager)
+        app = build_test_app(self.sync_service, self.config_service, mqtt_manager, command_service)
+        client = app.test_client()
+
+        response = client.get("/edge/v1/health", headers={"Origin": "http://localhost:3000"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "http://localhost:3000")
+
+    def test_corsHeadersPresentForMqttStatus(self):
+        mqtt_manager = FakeMqttManager()
+        command_service = CommandService(mqtt_manager=mqtt_manager)
+        app = build_test_app(self.sync_service, self.config_service, mqtt_manager, command_service)
+        client = app.test_client()
+
+        response = client.options(
+            "/edge/v1/mqtt/status",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "http://localhost:3000")
+
+    def test_cachedConfigReturns200WhenMissing(self):
+        mqtt_manager = FakeMqttManager()
+        command_service = CommandService(mqtt_manager=mqtt_manager)
+        app = build_test_app(self.sync_service, self.config_service, mqtt_manager, command_service)
+        client = app.test_client()
+
+        response = client.get("/edge/v1/devices/1/cached-config")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["deviceId"], "1")
+        self.assertFalse(body["available"])
+        self.assertIsNone(body["config"])
 
 
 if __name__ == "__main__":

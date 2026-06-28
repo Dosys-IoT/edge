@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -38,9 +39,8 @@ class ConfigService:
             return None
 
         return {
-            "id": cached.id,
             "deviceId": cached.device_id,
-            "configVersion": cached.config_version,
-            "payloadJson": cached.payload_json,
+            "available": True,
+            "config": json.loads(cached.payload_json),
             "cachedAt": cached.cached_at.isoformat(),
         }

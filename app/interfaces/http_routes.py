@@ -4,8 +4,28 @@ from flask import Blueprint, jsonify, request
 from app.persistence import repositories
 
 
+ALLOWED_ORIGINS = {
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://dosys-edge-149855215912.us-central1.run.app",
+}
+
+ALLOWED_HEADERS = "Content-Type, Authorization, X-Requested-With"
+ALLOWED_METHODS = "GET, POST, OPTIONS"
+
+
 def create_http_blueprint(sync_service, config_service, mqtt_manager, command_service):
     bp = Blueprint("edge_api", __name__)
+
+    @bp.after_request
+    def add_cors_headers(response):
+        origin = request.headers.get("Origin")
+        if origin in ALLOWED_ORIGINS:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Headers"] = ALLOWED_HEADERS
+        response.headers["Access-Control-Allow-Methods"] = ALLOWED_METHODS
+        return response
 
     @bp.get("/edge/v1/health")
     def health():
@@ -24,7 +44,7 @@ def create_http_blueprint(sync_service, config_service, mqtt_manager, command_se
     def get_cached_config(device_id: str):
         cached = config_service.get_cached_config(device_id)
         if cached is None:
-            return jsonify({"message": "No cached config found"}), 404
+            return jsonify({"deviceId": device_id, "available": False, "config": None}), 200
         return jsonify(cached), 200
 
     @bp.get("/edge/v1/diagnostics/rest/runtime-config/<device_id>")

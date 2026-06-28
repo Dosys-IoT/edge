@@ -1,4 +1,5 @@
 Flask>=3.0.0
+flask-cors>=4.0.0
 peewee>=3.17.0
 paho-mqtt>=2.1.0
 requests>=2.32.0
