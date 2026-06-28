@@ -2,7 +2,9 @@ import json
 import logging
 import hashlib
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Type
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ValidationError
 
@@ -31,6 +33,7 @@ EVENT_ROUTES: dict[str, EventRoute] = {
     "heartbeat": EventRoute(HeartbeatPayload, "/api/v1/device/internal/{device_id}/heartbeats"),
 }
 logger = logging.getLogger(__name__)
+LIMA_TZ = ZoneInfo("America/Lima")
 
 
 class SyncService:
@@ -72,7 +75,7 @@ class SyncService:
 
         try:
             response = self.rest_client.post_internal_event(endpoint, payload, device_key)
-            logger.info("[EDGE] backend %s response status=%s", event_type, response.status_code)
+            logger.info("[EDGE] backend %s status=%s body=%s", event_type, response.status_code, response.text[:500])
             if 200 <= response.status_code < 300:
                 repositories.mark_event_status(event, "SYNCED")
                 repositories.create_sync_attempt(event, endpoint, "SUCCESS", response.status_code, None)
@@ -88,6 +91,7 @@ class SyncService:
         except Exception as exc:  # pylint: disable=broad-except
             repositories.mark_event_status(event, "FAILED")
             repositories.create_sync_attempt(event, endpoint, "FAILED", None, str(exc))
+            logger.error("[EDGE] backend %s request failed endpoint=%s error=%s", event_type, endpoint, exc)
 
     def _normalize_timestamps(self, payload: dict[str, Any], event_type: str) -> dict[str, Any]:
         fields_by_type = {
@@ -100,10 +104,10 @@ class SyncService:
         normalized = dict(payload)
         for field in fields:
             value = normalized.get(field)
-            if isinstance(value, str) and value:
-                # REST expects OffsetDateTime. If timezone is missing, force UTC.
-                if "Z" not in value and "+" not in value[10:] and "-" not in value[10:]:
-                    normalized[field] = value + "Z"
+            if isinstance(value, datetime):
+                normalized[field] = _format_local_datetime(value)
+            elif isinstance(value, str) and value:
+                normalized[field] = _format_local_datetime(_coerce_datetime(value))
         return normalized
 
     def _normalize_payload_for_rest(self, payload: dict[str, Any], event_type: str, topic_device_id: str) -> dict[str, Any]:
@@ -207,3 +211,25 @@ class SyncService:
     def validate_config_request(self, payload: dict[str, Any]) -> ConfigRequestPayload:
         validated = ConfigRequestPayload.model_validate(payload)
         return validated
+
+
+def _coerce_datetime(value: str | datetime) -> datetime:
+    if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            return value.astimezone(LIMA_TZ).replace(tzinfo=None, microsecond=0)
+        return value.replace(microsecond=0)
+
+    candidate = value.strip()
+    normalized = candidate.replace("Z", "+00:00") if candidate.endswith("Z") else candidate
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return datetime.now(LIMA_TZ).replace(tzinfo=None, microsecond=0)
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(LIMA_TZ).replace(tzinfo=None, microsecond=0)
+    return parsed.replace(microsecond=0)
+
+
+def _format_local_datetime(value: datetime) -> str:
+    local_value = value.astimezone(LIMA_TZ).replace(tzinfo=None) if value.tzinfo is not None else value
+    return local_value.replace(microsecond=0).isoformat(timespec="seconds")

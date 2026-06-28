@@ -7,6 +7,7 @@ from flask import Flask
 
 from app.interfaces.http_routes import create_http_blueprint
 from app.mqtt.handlers import MqttMessageHandler
+from app.mqtt.topics import SUBSCRIPTIONS
 from app.mqtt.topics import config_response_topic
 from app.schemas.payloads import ConfigRequestPayload
 from app.services.command_service import CommandService
@@ -201,6 +202,62 @@ class EdgeContractTests(unittest.TestCase):
         )
 
         self.assertEqual(mqtt_client.published, [])
+
+    def test_invalidTelemetryTimestampStillForwards(self):
+        with patch("app.persistence.repositories.create_received_event", return_value=FakeEvent("1", "dosys/devices/1/heartbeat", "{}")), \
+             patch("app.persistence.repositories.mark_event_status", side_effect=lambda event, status: setattr(event, "status", status)), \
+             patch("app.persistence.repositories.create_sync_attempt", return_value=SimpleNamespace(id=1)):
+            self.sync_service.save_and_sync_event(
+                "dosys/devices/1/heartbeat",
+                {
+                    "deviceId": "1",
+                    "eventId": "hb-1",
+                    "rtcTime": "2165-25-45T65:25:28",
+                    "wifiConnected": True,
+                    "mqttConnected": True,
+                    "rtcOk": True,
+                    "sht3xOk": True,
+                    "dfPlayerOk": True,
+                    "sdCardOk": True,
+                    "switchOk": True,
+                    "buttonPin": 15,
+                    "freeHeap": 180000,
+                    "rssi": -55,
+                    "deviceStatus": "ONLINE",
+                    "firmwareVersion": "1.0.0",
+                },
+            )
+
+        _, endpoint, payload, _ = self.rest_client.calls[0]
+        self.assertEqual(endpoint, "/api/v1/device/internal/1/heartbeats")
+        self.assertEqual(payload["deviceStatus"], "ONLINE")
+        self.assertNotIn("Z", payload["rtcTime"])
+
+    def test_invalidEnvironmentTimestampStillForwards(self):
+        with patch("app.persistence.repositories.create_received_event", return_value=FakeEvent("1", "dosys/devices/1/environment", "{}")), \
+             patch("app.persistence.repositories.mark_event_status", side_effect=lambda event, status: setattr(event, "status", status)), \
+             patch("app.persistence.repositories.create_sync_attempt", return_value=SimpleNamespace(id=1)):
+            self.sync_service.save_and_sync_event(
+                "dosys/devices/1/environment",
+                {
+                    "deviceId": "1",
+                    "eventId": "env-1",
+                    "temperature": 27.8,
+                    "humidity": 60.2,
+                    "recordedAt": "2165-25-45T65:25:28",
+                    "firmwareVersion": "1.0.0",
+                },
+            )
+
+        _, endpoint, payload, _ = self.rest_client.calls[0]
+        self.assertEqual(endpoint, "/api/v1/device/internal/1/environment-readings")
+        self.assertEqual(payload["eventId"], "env-1")
+        self.assertNotIn("Z", payload["recordedAt"])
+
+    def test_subscriptionsIncludeHeartbeatEnvironment(self):
+        topics = {topic for topic, _qos in SUBSCRIPTIONS}
+        self.assertIn("dosys/devices/+/heartbeat", topics)
+        self.assertIn("dosys/devices/+/environment", topics)
 
     def test_forwardIntakeWithButtonPin15ToRest(self):
         with patch("app.persistence.repositories.create_received_event", return_value=FakeEvent("1", "dosys/devices/1/intake", "{}")), \
