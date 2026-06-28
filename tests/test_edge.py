@@ -171,6 +171,37 @@ class EdgeContractTests(unittest.TestCase):
         self.assertEqual(payload["buttonPin"], 15)
         self.assertEqual(payload["deviceStatus"], "ONLINE")
 
+    def test_invalidTelemetryDoesNotCrashEdge(self):
+        handler = MqttMessageHandler(
+            sync_service=self.sync_service,
+            config_service=self.config_service,
+        )
+        mqtt_client = FakeMqttClient()
+
+        handler.handle_message(
+            mqtt_client,
+            "dosys/devices/1/heartbeat",
+            json.dumps(
+                {
+                    "deviceId": "1",
+                    "eventId": "hb-1",
+                    "rtcTime": "2026-06-27T12:00:00",
+                    "wifiConnected": True,
+                    "mqttConnected": True,
+                    "rtcOk": True,
+                    "sht3xOk": True,
+                    "dfPlayerOk": True,
+                    "sdCardOk": True,
+                    "switchOk": True,
+                    "buttonPin": 15,
+                    "freeHeap": 180000,
+                    "rssi": -55,
+                }
+            ).encode("utf-8"),
+        )
+
+        self.assertEqual(mqtt_client.published, [])
+
     def test_forwardIntakeWithButtonPin15ToRest(self):
         with patch("app.persistence.repositories.create_received_event", return_value=FakeEvent("1", "dosys/devices/1/intake", "{}")), \
              patch("app.persistence.repositories.mark_event_status", side_effect=lambda event, status: setattr(event, "status", status)), \

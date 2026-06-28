@@ -29,6 +29,7 @@ class MqttMessageHandler:
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("Topic/device validation failed topic=%s error=%s", topic, exc)
             return
+        logger.info("[MQTT] telemetry received topic=%s deviceId=%s eventType=%s", topic, device_id, event_type)
         logger.info("Parsed event deviceId=%s eventType=%s payload=%s", device_id, event_type, payload)
 
         if event_type == "config_request":
@@ -68,6 +69,6 @@ class MqttMessageHandler:
             )
             publish_topic = config_response_topic(device_id)
             mqtt_client.publish(publish_topic, json.dumps(response_payload), qos=1)
-            logger.info("Published runtime config deviceId=%s topic=%s", device_id, publish_topic)
+            logger.info("[MQTT] config response published topic=%s deviceId=%s", publish_topic, device_id)
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("Failed config request handling deviceId=%s error=%s", device_id, exc)

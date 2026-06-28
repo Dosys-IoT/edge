@@ -68,10 +68,11 @@ class SyncService:
         route = EVENT_ROUTES[event_type]
         device_key = self.optional_device_key(event.device_id)
         endpoint = route.endpoint_template.format(device_id=event.device_id)
+        logger.info("[EDGE] forwarding %s to backend deviceId=%s endpoint=%s", event_type, event.device_id, endpoint)
 
         try:
             response = self.rest_client.post_internal_event(endpoint, payload, device_key)
-            logger.info("REST sync endpoint=%s status=%s response=%s", endpoint, response.status_code, response.text[:300])
+            logger.info("[EDGE] backend %s response status=%s", event_type, response.status_code)
             if 200 <= response.status_code < 300:
                 repositories.mark_event_status(event, "SYNCED")
                 repositories.create_sync_attempt(event, endpoint, "SUCCESS", response.status_code, None)
@@ -173,6 +174,7 @@ class SyncService:
         try:
             validated_model = route.schema.model_validate(payload)
         except ValidationError as exc:
+            logger.error("[EDGE] invalid telemetry topic=%s eventType=%s error=%s", topic, event_type, exc)
             raise ValueError(f"Payload validation failed for event={event_type}: {exc}") from exc
 
         normalized_payload = json.loads(validated_model.model_dump_json(exclude_none=True))
