@@ -1,4 +1,5 @@
 from uuid import uuid4
+import re
 
 from flask import Blueprint, jsonify, request
 from app.persistence import repositories
@@ -8,10 +9,23 @@ ALLOWED_ORIGINS = {
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://dosys-edge-149855215912.us-central1.run.app",
+    "https://frontend-web-jet-seven.vercel.app",
 }
+
+ALLOWED_ORIGIN_PATTERNS = (
+    re.compile(r"^https://.*\.vercel\.app$"),
+)
 
 ALLOWED_HEADERS = "Content-Type, Authorization, X-Requested-With"
 ALLOWED_METHODS = "GET, POST, OPTIONS"
+
+
+def is_allowed_origin(origin: str | None) -> bool:
+    if not origin:
+        return False
+    if origin in ALLOWED_ORIGINS:
+        return True
+    return any(pattern.match(origin) for pattern in ALLOWED_ORIGIN_PATTERNS)
 
 
 def create_http_blueprint(sync_service, config_service, mqtt_manager, command_service):
@@ -20,7 +34,7 @@ def create_http_blueprint(sync_service, config_service, mqtt_manager, command_se
     @bp.after_request
     def add_cors_headers(response):
         origin = request.headers.get("Origin")
-        if origin in ALLOWED_ORIGINS:
+        if is_allowed_origin(origin):
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Headers"] = ALLOWED_HEADERS

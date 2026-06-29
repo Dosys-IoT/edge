@@ -343,6 +343,20 @@ class EdgeContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "http://localhost:3000")
 
+    def test_corsHeadersPresentForVercelOrigin(self):
+        mqtt_manager = FakeMqttManager()
+        command_service = CommandService(mqtt_manager=mqtt_manager)
+        app = build_test_app(self.sync_service, self.config_service, mqtt_manager, command_service)
+        client = app.test_client()
+
+        response = client.get("/edge/v1/health", headers={"Origin": "https://frontend-web-jet-seven.vercel.app"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers.get("Access-Control-Allow-Origin"),
+            "https://frontend-web-jet-seven.vercel.app",
+        )
+
     def test_corsHeadersPresentForMqttStatus(self):
         mqtt_manager = FakeMqttManager()
         command_service = CommandService(mqtt_manager=mqtt_manager)

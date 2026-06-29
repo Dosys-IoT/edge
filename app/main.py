@@ -1,5 +1,6 @@
 import atexit
 import logging
+import re
 
 from flask import Flask
 from flask_cors import CORS
@@ -45,6 +46,8 @@ def create_app() -> tuple[Flask, object, object, object]:
             "http://localhost:3000",
             "http://127.0.0.1:3000",
             "https://dosys-edge-149855215912.us-central1.run.app",
+            "https://frontend-web-jet-seven.vercel.app",
+            re.compile(r"^https://.*\.vercel\.app$"),
         ]}},
         allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
         methods=["GET", "POST", "OPTIONS"],
